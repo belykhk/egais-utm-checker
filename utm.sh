@@ -2,14 +2,15 @@
 #EGAIS UTM checker
 #Author - Kostya Belykh k@belykh.su
 
+###CHANGE IT
+path=//home/foo/bar
+mailaddress=utm_reports@domain.ru
+###
+
 #Vars stuff
 PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin:
 port=8080
-path=//home/foo/bar
-###CHANGE IT
 list=$path"utm_list.csv"
-mailaddress=utm_reports@domain.ru
-###
 IFS=";"
 checkdate=$(date +%Y-%m-%d\ %H:%m:%S\ %z)
 
