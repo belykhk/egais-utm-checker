@@ -14,63 +14,110 @@ list=$path"utm_list.csv"
 IFS=";"
 checkdate=$(date +%Y-%m-%d\ %H:%m:%S\ %z)
 
-#Report File recreation
+#Пересоздаем файл с отчетом
 rm $path"utm_output.txt"
 touch $path"utm_output.txt"
 echo "Subject: Отчет по УТМ" >> $path"utm_output.txt"
 echo "" >> $path"utm_output.txt"
 echo "Время проверки: "$checkdate >> $path"utm_output.txt"
 echo "" >> $path"utm_output.txt"
+
+#Читаем список из $list
 while read lines
 do
 	set - $lines
 	echo $1 >> $path"utm_output.txt"
-	#Cheking UTM for availability
+	#Проверяем УТМ на доступность
 	STATUS=$(curl -s -o /dev/null -w '%{http_code}' $2":"$port)
-	#If we get a page:
+	#Если все хорошо и мы получаем страницу
 	if [ $STATUS -eq 200 ]; then
 		echo $1
 		curl $2":"$port > $path"tmp.html"
 
-		cat $path"tmp.html" | grep version: | sed -e 's/<pre>//g' | tr -d '\n'  | sed 's/version:/Версия УТМ: /g' >> $path"utm_output.txt"
+		#Получаем версию УТМ
+		utm_ver=$(cat $path"tmp.html" | grep "<p>Версия" | head -n 1 | sed -e 's/<p>//g' | sed -e 's/<\/p>//g' | tr -d '\n' \
+		| sed 's/Версия/Версия УТМ:/g' | sed 's/://g')
+		echo -e $utm_ver >> $path"utm_output.txt"
 
-		pki=$(cat $path"tmp.html" | grep PKI: | sed -e 's/<pre><img src="img\/ok24.png" alt="OK">&nbsp;&nbsp;//g' \
-		| sed 's#\(действителен\)\(.*\)\( по.*\)#\1\3#' | sed -e 's/<\/pre>//g')
-		pkienddate=$(echo $pki | sed -E "s/^.*([-0-9\ +\:]{23}00).*$/\1/")
-		pkidatediff=$((`date -d "$pkienddate" '+%s'` - `date -d "$checkdate" '+%s'`))
-		let pkidatediffdays=$pkidatediff/60/60/24
+		#Работаем по следующему варианту, если у нас версия УТМ 2.0.*
+		if [[ $utm_ver == *"2.0"* ]]; then
 
-		#Check PKI cert end date
-		if [ $pkidatediffdays -le 21 ]; then
-			echo $pki | tr -d '\n' >> $path"utm_output.txt"
-			echo "ВНИМАНИЕ! До окончания PKI сертификата осталось: "$pkidatediffdays" дней" >> $path"utm_output.txt"
-		else
-			echo $pki | tr -d '\n' >> $path"utm_output.txt"
-                        echo "До окончания PKI сертификата осталось: "$pkidatediffdays" дней" >> $path"utm_output.txt"
+			#Получаем информацию о PKI сертификате
+			pki=$(cat $path"tmp.html" | grep PKI: | sed -e 's/<pre><img src="img\/ok24.png" alt="OK">&nbsp;&nbsp;//g' \
+			| sed 's#\(действителен\)\(.*\)\( по.*\)#\1\3#' | sed -e 's/<\/pre>//g')
+			echo -e $pki  >> $path"utm_output.txt"
+
+			pkienddate=$(echo $pki | sed -E "s/^.*([-0-9\ +\:]{23}00).*$/\1/")
+			pkidatediff=$((`date -d "$pkienddate" '+%s'` - `date -d "$checkdate" '+%s'`))
+			let pkidatediffdays=$pkidatediff/60/60/24
+
+			#Проверка. Не осталось ли сертификату PKI меньше чем N дней.
+			if [ $pkidatediffdays -le 21 ]; then
+				echo -e "ВНИМАНИЕ! До окончания PKI сертификата осталось: "$pkidatediffdays" дней" >> $path"utm_output.txt"
+			else
+				echo -e "До окончания PKI сертификата осталось: "$pkidatediffdays" дней" >> $path"utm_output.txt"
+			fi
+
+			#Получаем информацию о ГОСТ сертификате
+			gost=$(cat $path"tmp.html" | grep ГОСТ: | sed -e 's/<pre><img src="img\/ok24.png" alt="OK">&nbsp;&nbsp;//g' \
+			| sed 's#\(действителен\)\(.*\)\( по.*\)#\1\3#' | sed -e 's/<\/pre>//g')
+			echo -e $gost >> $path"utm_output.txt"
+
+			gostenddate=$(echo $gost | sed -E "s/^.*([-0-9\ +\:]{23}00).*$/\1/")
+			gostdatediff=$((`date -d "$gostenddate" '+%s'` - `date -d "$checkdate" '+%s'`))
+			let gostdatediffdays=$gostdatediff/60/60/24
+
+			#Проверка. Не осталось ли сертификату ГОСТ меньше чем N дней.
+			if [ $gostdatediffdays -le 31 ]; then
+				echo -e "ВНИМАНИЕ! До окончания ГОСТ сертификата осталось: "$gostdatediffdays" дней" >> $path"utm_output.txt"
+			else
+				echo -e "До окончания ГОСТ сертификата осталось: "$gostdatediffdays" дней" >> $path"utm_output.txt"
+			fi
+
 		fi
 
-		gost=$(cat $path"tmp.html" | grep ГОСТ: | sed -e 's/<pre><img src="img\/ok24.png" alt="OK">&nbsp;&nbsp;//g' \
-		| sed 's#\(действителен\)\(.*\)\( по.*\)#\1\3#' | sed -e 's/<\/pre>//g')
-		gostenddate=$(echo $gost | sed -E "s/^.*([-0-9\ +\:]{23}00).*$/\1/")
-		gostdatediff=$((`date -d "$gostenddate" '+%s'` - `date -d "$checkdate" '+%s'`))
-        let gostdatediffdays=$gostdatediff/60/60/24
+		#Работаем по следующему варианту, если у нас версия УТМ 2.1.*
+		if [[ $utm_ver == *"2.1"* ]]; then
 
-		#Check GOST cert end date
-		if [ $gostdatediffdays -le 31 ]; then
-			echo $gost | tr -d '\n' >> $path"utm_output.txt"
-			echo "ВНИМАНИЕ! До окончания ГОСТ сертификата осталось: "$gostdatediffdays" дней" >> $path"utm_output.txt"
-		else
-			echo $gost | tr -d '\n' >> $path"utm_output.txt"
-                        echo "До окончания ГОСТ сертификата осталось: "$gostdatediffdays" дней" >> $path"utm_output.txt"
+			#Получаем информацию о PKI сертификате
+			pki=$(cat $path"tmp.html" | grep "Сертификат RSA" | sed 's#\(Действителен\)\(.*\)\( по.*\)#\1\3#' \
+			| cut -d ">" -f7 | sed -e 's/<\/div//g')
+			echo -e "PKI: "$pki  >> $path"utm_output.txt"
+
+			pkienddate=$(echo $pki | sed -E "s/^.*([-0-9\ +\:]{23}00).*$/\1/")
+			pkidatediff=$((`date -d "$pkienddate" '+%s'` - `date -d "$checkdate" '+%s'`))
+			let pkidatediffdays=$pkidatediff/60/60/24
+
+			#Проверка. Не осталось ли сертификату PKI меньше чем N дней.
+			if [ $pkidatediffdays -le 21 ]; then
+				echo -e "ВНИМАНИЕ! До окончания PKI сертификата осталось: "$pkidatediffdays" дней" >> $path"utm_output.txt"
+			else
+				echo -e "До окончания PKI сертификата осталось: "$pkidatediffdays" дней" >> $path"utm_output.txt"
+			fi
+
+			#Получаем информацию о ГОСТ сертификате
+			gost=$(cat $path"tmp.html" | grep "Сертификат ГОСТ" | sed 's#\(Действителен\)\(.*\)\( по.*\)#\1\3#' \
+			| cut -d ">" -f7 | sed -e 's/<\/div//g')
+			echo -e "ГОСТ: "$gost >> $path"utm_output.txt"
+
+			gostenddate=$(echo $gost | sed -E "s/^.*([-0-9\ +\:]{23}00).*$/\1/")
+			gostdatediff=$((`date -d "$gostenddate" '+%s'` - `date -d "$checkdate" '+%s'`))
+			let gostdatediffdays=$gostdatediff/60/60/24
+
+			#Проверка. Не осталось ли сертификату ГОСТ меньше чем N дней.
+			if [ $gostdatediffdays -le 31 ]; then
+				echo -e "ВНИМАНИЕ! До окончания ГОСТ сертификата осталось: "$gostdatediffdays" дней" >> $path"utm_output.txt"
+			else
+				echo -e "До окончания ГОСТ сертификата осталось: "$gostdatediffdays" дней" >> $path"utm_output.txt"
+			fi
+
 		fi
-
 		echo "" >> $path"utm_output.txt"
-	#If we didn't get anything:
+	#Если мы вместо http\200 получаем что-то другое (например 404 или 503)
 	else
 		echo "УТМ не доступен" >> $path"utm_output.txt"
 		echo "" >> $path"utm_output.txt"
 	fi
 done < $list
 rm $path"tmp.html"
-#Sending an email:
 ssmtp $mailaddress < $path"utm_output.txt"
